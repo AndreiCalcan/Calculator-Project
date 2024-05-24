@@ -1,4 +1,3 @@
-
 #include <avr/io.h>
 #include <util/delay.h>
 #include <LiquidCrystal_I2C.h>
@@ -13,19 +12,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 #define PM_BAUD 9600
 #define DEBOUNCE_TIME 500
-
-void lcd_activate()
-{
-    lcd.init();
-    lcd.clear();
-    lcd.backlight();
-
-    lcd.setCursor(2, 0);
-    lcd.print("Hello World");
-
-    lcd.setCursor(2, 1);
-    lcd.print("Andrei Calc");
-}
+#define DEBUG 1
 
 char input[30];
 int pos = 0;
@@ -34,7 +21,7 @@ char keypad[4][4] = {
     {'1', '2', '3', '+'},
     {'4', '5', '6', '-'},
     {'7', '8', '9', '('},
-    {'*', '0', '/', ')'}};
+    {'*', '0', '/', '.'}};
 
 void reset_input()
 {
@@ -45,94 +32,75 @@ void reset_input()
     pos = 0;
 }
 
-void build_input(char *str)
+void proc_keypad_press(int row, int column)
 {
-    char c = USART0_receive();
-    int i = 0;
-    while (c != '\n' && i < 40)
+    if (pos >= 16)
     {
-        str[i] = c;
-        i++;
-        c = USART0_receive();
+        pos = 17;
+        lcd.clear();
+        lcd.print(input);
+        lcd.setCursor(0, 1);
+        lcd.print("ERR_LEN");
+        if (DEBUG == 1)
+        {
+            printf("Eroare lungime prea mare\n");
+        }
+        _delay_ms(DEBOUNCE_TIME);
+        return;
     }
-    str[i - 1] = '\0';
+    char c = keypad[row][column];
+    char last_char = input[pos - 1];
+    if (c == '(' && (isdigit(last_char) || last_char == ')'))
+    {
+        c = ')';
+    }
+    if (DEBUG == 1)
+    {
+        printf("S-a apasat %c\n", c);
+    }
+    input[pos] = c;
+    pos++;
+    lcd.clear();
+    lcd.print(input);
+    _delay_ms(DEBOUNCE_TIME);
+}
+
+void scan_row(int row)
+{
+    for (int i = 2; i < 6; i++)
+    {
+        if ((PIND & (1 << i)) == 0)
+        {
+            proc_keypad_press(row, 5 - i);
+        }
+    }
 }
 
 void read_keypad()
 {
     PORTB &= ~(1 << PB1);
-    for (int i = 2; i < 6; i++)
-    {
-        if ((PIND & (1 << i)) == 0)
-        {
-            char output[30];
-            sprintf(output, "S-a apasat %c", keypad[0][5 - i]);
-            printf("%s\n", output);
-            input[pos] = keypad[0][5 - i];
-            pos++;
-            lcd.clear();
-            lcd.print(input);
-            _delay_ms(DEBOUNCE_TIME);
-        }
-    }
+    scan_row(0);
     PORTB |= (1 << PB1);
 
     PORTB &= ~(1 << PB0);
-    for (int i = 2; i < 6; i++)
-    {
-        if ((PIND & (1 << i)) == 0)
-        {
-            char output[30];
-            sprintf(output, "S-a apasat %c", keypad[1][5 - i]);
-            printf("%s\n", output);
-            input[pos] = keypad[1][5 - i];
-            pos++;
-            lcd.clear();
-            lcd.print(input);
-            _delay_ms(DEBOUNCE_TIME);
-        }
-    }
+    scan_row(1);
     PORTB |= (1 << PB0);
 
     PORTD &= ~(1 << PD7);
-    for (int i = 2; i < 6; i++)
-    {
-        if ((PIND & (1 << i)) == 0)
-        {
-            char output[30];
-            sprintf(output, "S-a apasat %c", keypad[2][5 - i]);
-            printf("%s\n", output);
-            input[pos] = keypad[2][5 - i];
-            pos++;
-            lcd.clear();
-            lcd.print(input);
-            _delay_ms(DEBOUNCE_TIME);
-        }
-    }
+    scan_row(2);
     PORTD |= (1 << PD7);
 
     PORTD &= ~(1 << PD6);
-    for (int i = 2; i < 6; i++)
-    {
-        if ((PIND & (1 << i)) == 0)
-        {
-            char output[30];
-            sprintf(output, "S-a apasat %c", keypad[3][5 - i]);
-            printf("%s\n", output);
-            input[pos] = keypad[3][5 - i];
-            pos++;
-            lcd.clear();
-            lcd.print(input);
-            _delay_ms(DEBOUNCE_TIME);
-        }
-    }
+    scan_row(3);
     PORTD |= (1 << PD6);
 
-    if ((PINB & (1 << PB2)) == 0)
+    if ((PINB & (1 << PB2)) == 0 && pos <= 16)
     {
+        if (DEBUG == 1)
+        {
+            printf("S-a apasat B1\n");
+        }
         char output[30];
-        sprintf(output, "S-a apasat B1");
-        printf("%s\n", output);
         sprintf(output, "%.3f", evaluate(input));
         lcd.clear();
         lcd.print(input);
@@ -144,9 +112,10 @@ void read_keypad()
 
     if ((PINB & (1 << PB3)) == 0 && pos > 0)
     {
-        char output[30];
-        sprintf(output, "S-a apasat B2");
-        printf("%s\n", output);
+        if (DEBUG == 1)
+        {
+            printf("S-a apasat B2\n");
+        }
         input[pos - 1] = '\0';
         pos--;
         lcd.clear();
@@ -157,34 +126,26 @@ void read_keypad()
 
 void setup_keypad()
 {
-
+    // Put Row 1&2 pins to output
     DDRB |= (1 << PB1) | (1 << PB0);
+
+    // Put Control Button 1&2 to input
     DDRB &= ~(1 << PB2) & ~(1 << PB3);
+
+    // Put Row 3&4 pins to output
     DDRD |= (1 << PD6) | (1 << PD7);
+
+    // Put Columns 1-4 pins to input
     DDRD &= ~(1 << PD2) & ~(1 << PD3) & ~(1 << PD4) & ~(1 << PD5);
+
+    // Activate Pull-Ups for input pins and set logic level to HIGH for outputs
     PORTB |= (1 << PB1) | (1 << PB0) | (1 << PB2) | (1 << PB3);
     PORTD |= (1 << PD6) | (1 << PD7) | (1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5);
 }
 
-// int main()
-// {
-//     USART0_init(CALC_USART_UBRR(PM_BAUD));
-//     USART0_use_stdio();
-//     setup_keypad();
-//     while (1)
-//     {
-//         read_keypad();
-//         // char input[40];
-//         // build_input(input);
-//         // printf("Received %s - (len = %d)\n", input, strlen(input));
-//         // printf("Evaluates to: %.3f\n", evaluate(input));
-//     }
-
-//     return 0;
-// }
-
-void setup()
+int main()
 {
+    init();
     lcd.init();
     lcd.clear();
     lcd.backlight();
@@ -195,13 +156,18 @@ void setup()
     lcd.setCursor(2, 1);
     lcd.print("Andrei C");
 
-    USART0_init(CALC_USART_UBRR(PM_BAUD));
-    USART0_use_stdio();
+    if (DEBUG == 1)
+    {
+        USART0_init(CALC_USART_UBRR(PM_BAUD));
+        USART0_use_stdio();
+    }
+
     setup_keypad();
     reset_input();
-}
+    while (1)
+    {
+        read_keypad();
+    }
 
-void loop()
-{
-    read_keypad();
+    return 0;
 }

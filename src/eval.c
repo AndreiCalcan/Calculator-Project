@@ -44,12 +44,11 @@ DT evaluate(char *tokens)
         // Current token is a whitespace,
         // skip it.
         char current_char = tokens[i];
-        // printf("%c\n", current_char);
         if (current_char == ' ')
             continue;
 
         // Current token is an opening
-        // brace, push it to 'ops'
+        // brace, push it to ops stack
         else if (current_char == '(')
         {
 
@@ -88,16 +87,8 @@ DT evaluate(char *tokens)
             val *= rev_value;
             rev_value = 1;
 
-            // printf("Pushing val %f\n", val);
             stack_push(values, &val);
 
-            // right now the i points to
-            // the character next to the digit,
-            // since the for loop also increases
-            // the i, we would skip one
-            //  token position; we need to
-            // decrease the value of i by 1 to
-            // correct the offset.
             i--;
         }
 
@@ -115,12 +106,11 @@ DT evaluate(char *tokens)
                 stack_pop(values, &val1);
                 stack_pop(ops, &op);
                 DT result = applyOp(val1, val2, op);
-                // printf("Parantheses - %d %c %d = %d\n", val1, op, val2, result);
                 stack_push(values, &result);
                 stack_top(ops, &top);
             }
 
-            // pop opening brace.
+            // Pop opening brace.
             if (ops->size > 0)
                 ops->size = ops->size - 1;
         }
@@ -131,7 +121,6 @@ DT evaluate(char *tokens)
             if (tokens[i] == '-' && (i == 0 || tokens[i - 1] == '('))
             {
                 rev_value = -1;
-                printf("Reverssed next value\n");
                 continue;
             }
 
@@ -145,13 +134,11 @@ DT evaluate(char *tokens)
                 stack_pop(values, &val1);
                 stack_pop(ops, &op);
                 DT result = applyOp(val1, val2, op);
-                // printf("%d %c %d = %d\n", val1, op, val2, result);
                 stack_push(values, &result);
                 stack_top(ops, &top);
             }
 
             // Push current token to 'ops'.
-            // ops.push(tokens[i]);
             stack_push(ops, &current_char);
         }
     }
@@ -167,7 +154,6 @@ DT evaluate(char *tokens)
         stack_pop(values, &val1);
         stack_pop(ops, &op);
         DT result = applyOp(val1, val2, op);
-        // printf("%d %c %d = %d\n", val1, op, val2, result);
         stack_push(values, &result);
     }
 
